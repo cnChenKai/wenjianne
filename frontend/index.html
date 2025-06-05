@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Entry System</title>
+    <link rel="stylesheet" href="style.css"> <!-- Will create this later if needed -->
+</head>
+<body>
+    <h1>File Entry</h1>
+
+    <form id="fileEntryForm">
+        <div>
+            <label for="serial_number">Serial Number:</label>
+            <input type="text" id="serial_number" name="serial_number" required>
+        </div>
+        <div>
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+        <div>
+            <label for="document_number">Document Number:</label>
+            <input type="text" id="document_number" name="document_number">
+        </div>
+        <div>
+            <label for="originating_unit">Originating Unit:</label>
+            <input type="text" id="originating_unit" name="originating_unit" required>
+        </div>
+        <div>
+            <label for="deadline">Deadline:</label>
+            <input type="date" id="deadline" name="deadline">
+        </div>
+        <div>
+            <label for="category">Category:</label>
+            <select id="category" name="category">
+                <option value="A">A</option>
+                <option value="B">B</option>
+            </select>
+        </div>
+        <button type="submit" id="submitButton">Submit Document</button>
+    </form>
+
+    <div id="messageArea"></div>
+
+    <hr>
+
+    <h2>Search Documents</h2>
+    <form id="searchForm">
+        <div>
+            <label for="search_name_keyword">Name Keyword:</label>
+            <input type="text" id="search_name_keyword" name="name_keyword">
+        </div>
+        <div>
+            <label for="search_document_number">Document Number:</label>
+            <input type="text" id="search_document_number" name="document_number">
+        </div>
+        <div>
+            <label for="search_originating_unit">Originating Unit:</label>
+            <input type="text" id="search_originating_unit" name="originating_unit">
+        </div>
+        <div>
+            <label for="search_category">Category:</label>
+            <select id="search_category" name="category">
+                <option value="">Any</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+            </select>
+        </div>
+        <div>
+            <label for="search_entry_date_from">Entry Date From:</label>
+            <input type="date" id="search_entry_date_from" name="entry_date_from">
+        </div>
+        <div>
+            <label for="search_entry_date_to">Entry Date To:</label>
+            <input type="date" id="search_entry_date_to" name="entry_date_to">
+        </div>
+        <div>
+            <label for="search_status">Status:</label>
+            <input type="text" id="search_status" name="status" placeholder="e.g., pending_processing">
+        </div>
+        <button type="submit">Search</button>
+        <button type="button" id="clearSearchButton">Clear Search</button>
+    </form>
+
+    <hr>
+
+    <h2>Documents List</h2>
+    <button id="refreshListButton">Refresh List</button>
+    <div id="documentsListArea">
+        <!-- Documents will be listed here by script.js -->
+    </div>
+
+    <hr>
+
+    <h2>Flow History</h2>
+    <div id="flowHistoryArea">
+        <!-- Flow history for a selected document will be shown here -->
+    </div>
+
+    <!-- Modal/Section for Sending Document -->
+    <div id="sendDocumentModal" style="display:none; border: 1px solid #ccc; padding: 10px; margin-top: 20px;">
+        <h3>Send Document</h3>
+        <form id="sendDocumentForm">
+            <input type="hidden" id="sendDocumentId" name="document_id">
+            <div>
+                <label for="sendRecipientName">Recipient Name:</label>
+                <input type="text" id="sendRecipientName" name="recipient_name" required>
+            </div>
+            <div>
+                <label for="sendStage">Stage:</label>
+                <select id="sendStage" name="stage">
+                    <option value="distribution">Distribution</option>
+                    <option value="approval">Approval</option>
+                    <option value="review">Review</option>
+                    <option value="forwarded">Forwarded</option>
+                </select>
+            </div>
+            <div>
+                <label for="sendNotes">Notes:</label>
+                <textarea id="sendNotes" name="notes"></textarea>
+            </div>
+            <button type="submit">Confirm Send</button>
+            <button type="button" onclick="document.getElementById('sendDocumentModal').style.display='none'">Cancel</button>
+        </form>
+    </div>
+
+    <!-- Modal/Section for Receiving Document -->
+    <div id="receiveDocumentModal" style="display:none; border: 1px solid #ccc; padding: 10px; margin-top: 20px;">
+        <h3>Receive Document</h3>
+        <form id="receiveDocumentForm">
+            <input type="hidden" id="receiveDocumentId" name="document_id">
+            <div>
+                <label for="receiveReturnerName">Returner Name:</label>
+                <input type="text" id="receiveReturnerName" name="returner_name" required>
+            </div>
+            <div>
+                <label for="receiveStage">Stage:</label>
+                <select id="receiveStage" name="stage">
+                    <option value="reception">Reception</option>
+                    <option value="processing">Processing</option>
+                    <option value="archival_prep">Archival Prep</option>
+                </select>
+            </div>
+            <div>
+                <label for="receiveNotes">Notes:</label>
+                <textarea id="receiveNotes" name="notes"></textarea>
+            </div>
+            <button type="submit">Confirm Receive</button>
+            <button type="button" onclick="document.getElementById('receiveDocumentModal').style.display='none'">Cancel</button>
+        </form>
+    </div>
+
+    <div id="actionMessageArea" style="margin-top: 10px;"></div>
+
+
+    <script src="script.js"></script>
+</body>
+</html>
