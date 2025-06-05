@@ -1,31 +1,44 @@
 document.addEventListener('DOMContentLoaded', () => {
     const fileEntryForm = document.getElementById('fileEntryForm');
-    const messageArea = document.getElementById('messageArea'); // For file entry form
-    const actionMessageArea = document.getElementById('actionMessageArea'); // For send/receive actions
-
+    const messageArea = document.getElementById('messageArea');
+    const actionMessageArea = document.getElementById('actionMessageArea');
     const documentsListArea = document.getElementById('documentsListArea');
     const flowHistoryArea = document.getElementById('flowHistoryArea');
     const refreshListButton = document.getElementById('refreshListButton');
-
     const sendDocumentModal = document.getElementById('sendDocumentModal');
     const sendDocumentForm = document.getElementById('sendDocumentForm');
     const sendDocumentIdInput = document.getElementById('sendDocumentId');
-
     const receiveDocumentModal = document.getElementById('receiveDocumentModal');
     const receiveDocumentForm = document.getElementById('receiveDocumentForm');
     const receiveDocumentIdInput = document.getElementById('receiveDocumentId');
-
     const searchForm = document.getElementById('searchForm');
     const clearSearchButton = document.getElementById('clearSearchButton');
 
-    // Function to display messages (used for send/receive actions)
-    function showActionMessage(message, isError = false) {
-        actionMessageArea.textContent = message;
-        actionMessageArea.style.color = isError ? 'red' : 'green';
+    // Loading indicator function
+    function showLoading(element) {
+        const loader = document.createElement('div');
+        loader.className = 'loading';
+        element.appendChild(loader);
+        return loader;
     }
 
-    // Fetch and display all documents
+    function showMessage(element, message, isError = false) {
+        element.textContent = message;
+        element.className = isError ? 'error' : 'success';
+        element.style.display = 'block';
+        setTimeout(() => {
+            element.style.display = 'none';
+        }, 5000);
+    }
+
+    function showActionMessage(message, isError = false) {
+        showMessage(actionMessageArea, message, isError);
+    }
+
     async function fetchAndDisplayDocuments(queryParams = {}) {
+        const loader = showLoading(documentsListArea);
+        documentsListArea.innerHTML = '';
+
         let url = '/api/documents';
         const queryString = new URLSearchParams(queryParams).toString();
         if (queryString) {
@@ -35,12 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(url);
             if (!response.ok) {
-                showActionMessage(`Error fetching documents: ${response.statusText} (URL: ${url})`, true);
-                return;
+                throw new Error(`${response.status}: ${response.statusText}`);
             }
             const documents = await response.json();
-            documentsListArea.innerHTML = ''; // Clear current list
 
+            documentsListArea.innerHTML = '';
             if (documents.length === 0) {
                 documentsListArea.innerHTML = '<p>No documents found.</p>';
                 return;
@@ -57,56 +69,55 @@ document.addEventListener('DOMContentLoaded', () => {
                     <strong>Entry:</strong> ${new Date(doc.entry_time).toLocaleString()}
                 `;
 
-                const sendButton = document.createElement('button');
-                sendButton.textContent = 'Send';
-                sendButton.onclick = () => {
-                    sendDocumentIdInput.value = doc.id;
-                    sendDocumentModal.style.display = 'block';
-                    receiveDocumentModal.style.display = 'none';
-                    showActionMessage(''); // Clear previous messages
-                };
-
-                const receiveButton = document.createElement('button');
-                receiveButton.textContent = 'Receive';
-                receiveButton.onclick = () => {
-                    receiveDocumentIdInput.value = doc.id;
-                    receiveDocumentModal.style.display = 'block';
-                    sendDocumentModal.style.display = 'none';
-                    showActionMessage('');
-                };
-
-                const viewHistoryButton = document.createElement('button');
-                viewHistoryButton.textContent = 'View History';
-                viewHistoryButton.onclick = () => fetchAndDisplayFlowHistory(doc.id);
-
                 const actionsDiv = document.createElement('div');
                 actionsDiv.className = 'doc-actions';
 
-                // Add Send and Receive buttons only if not archived
                 if (doc.status !== 'archived') {
+                    const sendButton = document.createElement('button');
+                    sendButton.textContent = 'Send';
+                    sendButton.onclick = () => {
+                        sendDocumentIdInput.value = doc.id;
+                        sendDocumentModal.style.display = 'block';
+                        receiveDocumentModal.style.display = 'none';
+                        showActionMessage('');
+                    };
                     actionsDiv.appendChild(sendButton);
+
+                    const receiveButton = document.createElement('button');
+                    receiveButton.textContent = 'Receive';
+                    receiveButton.onclick = () => {
+                        receiveDocumentIdInput.value = doc.id;
+                        receiveDocumentModal.style.display = 'block';
+                        sendDocumentModal.style.display = 'none';
+                        showActionMessage('');
+                    };
                     actionsDiv.appendChild(receiveButton);
 
                     const completeButton = document.createElement('button');
                     completeButton.textContent = 'Mark Completed';
                     completeButton.className = 'complete-btn';
-                    completeButton.dataset.id = doc.id; // Store doc.id in a data attribute
+                    completeButton.dataset.id = doc.id;
                     completeButton.addEventListener('click', handleCompleteDocument);
                     actionsDiv.appendChild(completeButton);
                 }
 
-                actionsDiv.appendChild(viewHistoryButton); // View history is always available
+                const viewHistoryButton = document.createElement('button');
+                viewHistoryButton.textContent = 'View History';
+                viewHistoryButton.onclick = () => fetchAndDisplayFlowHistory(doc.id);
+                actionsDiv.appendChild(viewHistoryButton);
+
                 li.appendChild(actionsDiv);
                 ul.appendChild(li);
             });
             documentsListArea.appendChild(ul);
         } catch (error) {
             console.error('Error fetching documents:', error);
-            showActionMessage('Failed to fetch documents. See console for details.', true);
+            showActionMessage(`Failed to fetch documents: ${error.message}`, true);
+        } finally {
+            loader.remove();
         }
     }
 
-    // Handler for "Mark as Completed" button clicks
     async function handleCompleteDocument(event) {
         const documentId = event.target.dataset.id;
         const completedBy = prompt("Enter your name for completion record:");
@@ -117,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const payload = { completed_by: completedBy };
-        showActionMessage(''); // Clear previous messages
+        showActionMessage('');
 
         try {
             const response = await fetch(`/api/documents/${documentId}/complete`, {
@@ -129,43 +140,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (response.ok) {
                 showActionMessage(responseData.message || "Document marked as completed!");
-                fetchAndDisplayDocuments(); // Refresh the documents list
-                // Optionally, refresh flow history if it's for the completed document
-                // Check if flowHistoryArea has content related to this documentId before refreshing
+                fetchAndDisplayDocuments();
                 const displayedHistoryId = flowHistoryArea.querySelector('h3')?.textContent.match(/Document ID: (\d+)/);
                 if (displayedHistoryId && displayedHistoryId[1] === documentId) {
                     fetchAndDisplayFlowHistory(documentId);
                 }
             } else {
-                showActionMessage(responseData.error || `Error completing document: ${response.statusText}`, true);
+                throw new Error(responseData.error || response.statusText);
             }
         } catch (error) {
             console.error('Complete document error:', error);
-            showActionMessage('An unexpected error occurred while completing the document. Check console.', true);
+            showActionMessage(`Error completing document: ${error.message}`, true);
         }
     }
 
-
-    // Fetch and display flow history for a document
     async function fetchAndDisplayFlowHistory(documentId) {
-        flowHistoryArea.innerHTML = `Loading history for Document ID: ${documentId}...`;
+        const loader = showLoading(flowHistoryArea);
+        flowHistoryArea.innerHTML = '';
+
         try {
             const response = await fetch(`/api/documents/${documentId}/flow`);
             if (!response.ok) {
-                flowHistoryArea.innerHTML = `<p style="color:red;">Error fetching flow history: ${response.statusText}</p>`;
-                return;
+                throw new Error(`${response.status}: ${response.statusText}`);
             }
             const flowRecords = await response.json();
-            flowHistoryArea.innerHTML = ''; // Clear current history
 
-            if (flowRecords.length === 0) {
-                flowHistoryArea.innerHTML = '<p>No flow history found for this document.</p>';
-                return;
-            }
-
+            flowHistoryArea.innerHTML = '';
             const h3 = document.createElement('h3');
             h3.textContent = `Flow History for Document ID: ${documentId}`;
             flowHistoryArea.appendChild(h3);
+
+            if (flowRecords.length === 0) {
+                flowHistoryArea.innerHTML += '<p>No flow history found for this document.</p>';
+                return;
+            }
 
             const ul = document.createElement('ul');
             flowRecords.forEach(record => {
@@ -190,34 +198,33 @@ document.addEventListener('DOMContentLoaded', () => {
             flowHistoryArea.appendChild(ul);
         } catch (error) {
             console.error('Error fetching flow history:', error);
-            flowHistoryArea.innerHTML = `<p style="color:red;">Failed to fetch flow history. See console for details.</p>`;
+            flowHistoryArea.innerHTML = `<p class="error">Failed to fetch flow history: ${error.message}</p>`;
+        } finally {
+            loader.remove();
         }
     }
 
-    // Event listener for the main file entry form
     fileEntryForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        const serial_number = document.getElementById('serial_number').value;
-        const name = document.getElementById('name').value;
-        const document_number = document.getElementById('document_number').value;
-        const originating_unit = document.getElementById('originating_unit').value;
-        const deadline = document.getElementById('deadline').value;
-        const category = document.getElementById('category').value;
+        const formData = {
+            serial_number: document.getElementById('serial_number').value,
+            name: document.getElementById('name').value,
+            document_number: document.getElementById('document_number').value || null,
+            originating_unit: document.getElementById('originating_unit').value,
+            deadline: document.getElementById('deadline').value || null,
+            category: document.getElementById('category').value
+        };
 
-        if (!serial_number || !name || !originating_unit) {
-            messageArea.textContent = 'Please fill in all required fields: Serial Number, Name, and Originating Unit.';
-            messageArea.style.color = 'red';
+        if (!formData.serial_number || !formData.name || !formData.originating_unit) {
+            showMessage(messageArea, 'Please fill in all required fields: Serial Number, Name, and Originating Unit.', true);
             return;
         }
 
-        const formData = {
-            serial_number, name, originating_unit, category,
-            document_number: document_number || null,
-            deadline: deadline || null,
-        };
-
-        messageArea.textContent = ''; messageArea.style.color = 'black';
+        const submitButton = event.target.querySelector('button[type="submit"]');
+        const originalText = submitButton.textContent;
+        submitButton.disabled = true;
+        submitButton.textContent = 'Submitting...';
 
         try {
             const response = await fetch('/api/documents', {
@@ -226,142 +233,129 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(formData),
             });
             const responseData = await response.json();
+
             if (response.status === 201) {
-                messageArea.textContent = `Success: ${responseData.message} (ID: ${responseData.id})`;
-                messageArea.style.color = 'green';
+                showMessage(messageArea, `Success: ${responseData.message} (ID: ${responseData.id})`);
                 fileEntryForm.reset();
-                fetchAndDisplayDocuments(); // Refresh the list
+                fetchAndDisplayDocuments();
             } else {
-                messageArea.textContent = `Error: ${responseData.error || response.statusText}`;
-                messageArea.style.color = 'red';
+                throw new Error(responseData.error || response.statusText);
             }
         } catch (error) {
-            console.error('File entry fetch error:', error);
-            messageArea.textContent = 'An unexpected error occurred during file entry. Check console.';
-            messageArea.style.color = 'red';
+            console.error('File entry error:', error);
+            showMessage(messageArea, `Error: ${error.message}`, true);
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = originalText;
         }
     });
 
-    // Event listener for "Refresh List" button
     refreshListButton.addEventListener('click', () => {
-        searchForm.reset(); // Also clear search form on manual refresh
+        searchForm.reset();
         fetchAndDisplayDocuments();
-        flowHistoryArea.innerHTML = ''; // Clear history view
+        flowHistoryArea.innerHTML = '';
     });
 
-    // Event listener for search form submission
     searchForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const params = {};
-        const nameKeyword = document.getElementById('search_name_keyword').value;
-        if (nameKeyword) params.name_keyword = nameKeyword;
-
-        const docNumber = document.getElementById('search_document_number').value;
-        if (docNumber) params.document_number = docNumber;
-
-        const originatingUnit = document.getElementById('search_originating_unit').value;
-        if (originatingUnit) params.originating_unit = originatingUnit;
-
-        const category = document.getElementById('search_category').value;
-        if (category) params.category = category;
-
-        const entryDateFrom = document.getElementById('search_entry_date_from').value;
-        if (entryDateFrom) params.entry_date_from = entryDateFrom;
-
-        const entryDateTo = document.getElementById('search_entry_date_to').value;
-        if (entryDateTo) params.entry_date_to = entryDateTo;
-
-        const status = document.getElementById('search_status').value;
-        if (status) params.status = status;
-
+        ['name_keyword', 'document_number', 'originating_unit', 'category', 
+         'entry_date_from', 'entry_date_to', 'status'].forEach(field => {
+            const value = document.getElementById(`search_${field}`).value;
+            if (value) params[field] = value;
+        });
         fetchAndDisplayDocuments(params);
-        flowHistoryArea.innerHTML = ''; // Clear history view as context changed
+        flowHistoryArea.innerHTML = '';
     });
 
-    // Event listener for "Clear Search" button
-    clearSearchButton.addEventListener('click', ()_=> {
+    clearSearchButton.addEventListener('click', () => {
         searchForm.reset();
-        fetchAndDisplayDocuments({}); // Fetch all documents
-        flowHistoryArea.innerHTML = ''; // Clear history view
+        fetchAndDisplayDocuments();
+        flowHistoryArea.innerHTML = '';
     });
 
-    // Event listener for "Send Document" form submission
     sendDocumentForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const document_id = sendDocumentIdInput.value;
         const recipient_name = document.getElementById('sendRecipientName').value;
         const stage = document.getElementById('sendStage').value;
         const notes = document.getElementById('sendNotes').value;
-        const sender_name = "WebAppUser"; // Hardcoded as per requirement
+        const sender_name = "WebAppUser";
 
         if (!recipient_name || !stage) {
             showActionMessage("Recipient Name and Stage are required for sending.", true);
             return;
         }
 
-        const payload = { recipient_name, stage, notes, sender_name };
+        const submitButton = event.target.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
 
         try {
             const response = await fetch(`/api/documents/${document_id}/send`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({ recipient_name, stage, notes, sender_name }),
             });
             const responseData = await response.json();
+
             if (response.ok) {
                 showActionMessage(responseData.message || "Document sent successfully!");
                 sendDocumentModal.style.display = 'none';
                 sendDocumentForm.reset();
-                fetchAndDisplayDocuments(); // Refresh list
-                fetchAndDisplayFlowHistory(document_id); // Refresh history if this doc was viewed
+                fetchAndDisplayDocuments();
+                fetchAndDisplayFlowHistory(document_id);
             } else {
-                showActionMessage(responseData.error || `Error sending document: ${response.statusText}`, true);
+                throw new Error(responseData.error || response.statusText);
             }
         } catch (error) {
             console.error('Send document error:', error);
-            showActionMessage('An unexpected error occurred while sending. Check console.', true);
+            showActionMessage(`Error sending document: ${error.message}`, true);
+        } finally {
+            submitButton.disabled = false;
         }
     });
 
-    // Event listener for "Receive Document" form submission
     receiveDocumentForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const document_id = receiveDocumentIdInput.value;
         const returner_name = document.getElementById('receiveReturnerName').value;
         const stage = document.getElementById('receiveStage').value;
         const notes = document.getElementById('receiveNotes').value;
-        const receiver_name = "WebAppUser"; // Hardcoded as per requirement
+        const receiver_name = "WebAppUser";
 
         if (!returner_name || !stage) {
             showActionMessage("Returner Name and Stage are required for receiving.", true);
             return;
         }
 
-        const payload = { returner_name, stage, notes, receiver_name };
+        const submitButton = event.target.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
 
         try {
             const response = await fetch(`/api/documents/${document_id}/receive`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
+                body: JSON.stringify({ returner_name, stage, notes, receiver_name }),
             });
             const responseData = await response.json();
+
             if (response.ok) {
                 showActionMessage(responseData.message || "Document received successfully!");
                 receiveDocumentModal.style.display = 'none';
                 receiveDocumentForm.reset();
-                fetchAndDisplayDocuments(); // Refresh list
-                fetchAndDisplayFlowHistory(document_id); // Refresh history
+                fetchAndDisplayDocuments();
+                fetchAndDisplayFlowHistory(document_id);
             } else {
-                showActionMessage(responseData.error || `Error receiving document: ${response.statusText}`, true);
+                throw new Error(responseData.error || response.statusText);
             }
         } catch (error) {
             console.error('Receive document error:', error);
-            showActionMessage('An unexpected error occurred while receiving. Check console.', true);
+            showActionMessage(`Error receiving document: ${error.message}`, true);
+        } finally {
+            submitButton.disabled = false;
         }
     });
 
-
     // Initial load of documents
-    fetchAndDisplayDocuments({}); // Pass empty object for initial load
+    fetchAndDisplayDocuments();
 });
