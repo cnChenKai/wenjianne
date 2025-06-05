@@ -7,7 +7,8 @@
     <link rel="stylesheet" href="style.css"> <!-- Will create this later if needed -->
 </head>
 <body>
-    <h1>File Entry</h1>
+    <div class="container"> <!-- Start of new container div -->
+        <h1>File Entry</h1>
 
     <form id="fileEntryForm">
         <div>
@@ -41,6 +42,46 @@
     </form>
 
     <div id="messageArea"></div>
+
+    <hr>
+
+    <h2>工作看板 (Dashboard)</h2>
+    <button id="refreshDashboardButton" style="margin-bottom: 15px;">Refresh Dashboard</button>
+
+    <div>
+        <h3>待处理/待收回文件 (Pending Action/Due Recalls)</h3>
+        <div id="dashboardDueRecallsArea" style="margin-bottom: 15px;">Loading...</div>
+    </div>
+
+    <div>
+        <h3>临近/超期文件 (Nearing Deadline / Overdue Documents)</h3>
+        <div id="dashboardOverdueDocumentsArea" style="margin-bottom: 15px;">Loading...</div>
+    </div>
+
+    <div>
+        <h3>工作统计 (Work Statistics)</h3>
+        <div id="dashboardStatisticsArea">Loading...</div>
+    </div>
+
+    <hr>
+
+    <h2>Personnel Management</h2>
+    <form id="addPersonnelForm">
+        <div>
+            <label for="personnelName">Name:</label>
+            <input type="text" id="personnelName" name="personnelName" placeholder="Personnel Name" required>
+        </div>
+        <div>
+            <label for="personnelRole">Role:</label>
+            <input type="text" id="personnelRole" name="personnelRole" placeholder="Personnel Role">
+        </div>
+        <button type="submit">Add Personnel</button>
+    </form>
+    <div id="personnelMessageArea" style="margin-top: 10px;"></div>
+    <button id="refreshPersonnelListButton" style="margin-top: 10px;">Refresh Personnel List</button>
+    <div id="personnelListArea" style="margin-top: 10px;">
+        <!-- Personnel will be listed here -->
+    </div>
 
     <hr>
 
@@ -104,15 +145,17 @@
             <input type="hidden" id="sendDocumentId" name="document_id">
             <div>
                 <label for="sendRecipientName">Recipient Name:</label>
-                <input type="text" id="sendRecipientName" name="recipient_name" required>
+                <select id="sendRecipientName" name="recipient_name" required></select>
+            </div>
+            <div>
+                <label for="sendOperatorName">Operator (Sender):</label>
+                <select id="sendOperatorName" name="sender_name" required></select>
             </div>
             <div>
                 <label for="sendStage">Stage:</label>
                 <select id="sendStage" name="stage">
-                    <option value="distribution">Distribution</option>
-                    <option value="approval">Approval</option>
-                    <option value="review">Review</option>
-                    <option value="forwarded">Forwarded</option>
+                    <option value="distribution">分办文阶段 (Distribution)</option>
+                    <option value="approval">领导签批阶段 (Approval)</option>
                 </select>
             </div>
             <div>
@@ -131,14 +174,17 @@
             <input type="hidden" id="receiveDocumentId" name="document_id">
             <div>
                 <label for="receiveReturnerName">Returner Name:</label>
-                <input type="text" id="receiveReturnerName" name="returner_name" required>
+                <select id="receiveReturnerName" name="returner_name" required></select>
+            </div>
+            <div>
+                <label for="receiveOperatorName">Operator (Receiver):</label>
+                <select id="receiveOperatorName" name="receiver_name" required></select>
             </div>
             <div>
                 <label for="receiveStage">Stage:</label>
                 <select id="receiveStage" name="stage">
-                    <option value="reception">Reception</option>
-                    <option value="processing">Processing</option>
-                    <option value="archival_prep">Archival Prep</option>
+                    <option value="distribution">分办文阶段 (Distribution)</option>
+                    <option value="approval">领导签批阶段 (Approval)</option>
                 </select>
             </div>
             <div>
@@ -152,6 +198,7 @@
 
     <div id="actionMessageArea" style="margin-top: 10px;"></div>
 
+    </div> <!-- End of new container div -->
 
     <script src="script.js"></script>
 </body>

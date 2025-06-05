@@ -39,27 +39,41 @@ def create_document(): # Renamed from documents_api to create_document
 
     name = data.get('name')
     originating_unit = data.get('originating_unit')
-    serial_number = data.get('serial_number') # Making serial_number required for now
+    serial_number_input = data.get('serial_number') # User-provided serial number
 
-    # Validate required fields
+    # Validate required fields (name and originating_unit are still mandatory)
     if not name:
         return jsonify({"error": "Missing required field: name"}), 400
     if not originating_unit:
         return jsonify({"error": "Missing required field: originating_unit"}), 400
-    if not serial_number: # Added this check
-        return jsonify({"error": "Missing required field: serial_number"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
+    final_serial_number = None
+
     try:
-        # Check for serial_number uniqueness
-        cursor.execute("SELECT id FROM documents WHERE serial_number = ?", (serial_number,))
-        if cursor.fetchone():
-            return jsonify({"error": f"Serial number '{serial_number}' already exists"}), 409
+        if serial_number_input and serial_number_input.strip():
+            final_serial_number = serial_number_input.strip()
+            # Check for serial_number uniqueness if provided by user
+            cursor.execute("SELECT id FROM documents WHERE serial_number = ?", (final_serial_number,))
+            if cursor.fetchone():
+                return jsonify({"error": f"Serial number '{final_serial_number}' already exists"}), 409
+        else:
+            # Generate serial_number if not provided or empty
+            # Loop to ensure uniqueness for generated SN, though highly unlikely to collide with timestamp.
+            # For this iteration, we assume one attempt is sufficient as per prompt.
+            # If DB constraint catches it, a general IntegrityError will be returned.
+            final_serial_number = f"DOC-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            # Optional: Add a check here if truly paranoid about generated SN collision before INSERT attempt
+            # cursor.execute("SELECT id FROM documents WHERE serial_number = ?", (final_serial_number,))
+            # if cursor.fetchone():
+            #     # Handle extremely rare collision, perhaps by trying again or returning an error
+            #     return jsonify({"error": "Failed to generate a unique serial number, please try again"}), 500
+
 
         # Prepare data for insertion
         document_data = {
-            'serial_number': serial_number,
+            'serial_number': final_serial_number,
             'name': name,
             'document_number': data.get('document_number'),
             'originating_unit': originating_unit,
@@ -70,7 +84,8 @@ def create_document(): # Renamed from documents_api to create_document
 
         # Filter out None values for fields that are optional and can be NULL in DB
         # For required fields, they are already validated or should have a value.
-        document_data_filtered = {k: v for k, v in document_data.items() if v is not None or k in ['serial_number', 'name', 'originating_unit']}
+        # 'serial_number' is now always populated (either user or generated)
+        document_data_filtered = {k: v for k, v in document_data.items() if v is not None or k in ['name', 'originating_unit', 'serial_number']}
 
         columns = ', '.join(document_data_filtered.keys())
         placeholders = ', '.join(['?'] * len(document_data_filtered))
@@ -322,6 +337,162 @@ def complete_document(document_id):
         conn.rollback()
         app.logger.error(f"Database error on complete: {e}")
         return jsonify({"error": "A database error occurred while completing the document"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+# Refactored personnel endpoints
+@app.route('/api/personnel', methods=['GET', 'POST'])
+def personnel_api():
+    if request.method == 'POST':
+        return _add_personnel_record()
+    elif request.method == 'GET':
+        return _get_all_personnel_records()
+
+def _get_all_personnel_records():
+    conn = get_db_connection()
+    try:
+        personnel_cursor = conn.execute("SELECT id, name, role FROM personnel ORDER BY name ASC")
+        personnel_list = [dict(row) for row in personnel_cursor.fetchall()]
+        return jsonify(personnel_list), 200
+    except sqlite3.Error as e:
+        app.logger.error(f"Database error getting all personnel: {e}")
+        return jsonify({"error": "A database error occurred while fetching personnel"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+def _add_personnel_record():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "Invalid input"}), 400
+
+    name = data.get('name')
+    role = data.get('role') # Role can be None if not provided, DB should handle default or allow NULL
+
+    if not name:
+        return jsonify({"error": "Missing required field: name"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("INSERT INTO personnel (name, role) VALUES (?, ?)", (name, role))
+        conn.commit()
+        personnel_id = cursor.lastrowid
+        return jsonify({"message": "Personnel added successfully", "id": personnel_id}), 201
+    except sqlite3.IntegrityError as e:
+        conn.rollback()
+        if "UNIQUE constraint failed: personnel.name" in str(e).lower(): # Made case insensitive for robustness
+            return jsonify({"error": f"Personnel with name '{name}' already exists"}), 409
+        # Log the specific integrity error for debugging
+        app.logger.error(f"Database integrity error adding personnel: {e}")
+        return jsonify({"error": f"A database integrity error occurred: {e}"}), 400
+    except sqlite3.Error as e:
+        conn.rollback()
+        app.logger.error(f"Database error adding personnel: {e}")
+        return jsonify({"error": "A database error occurred while adding personnel"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/dashboard/due_recalls', methods=['GET'])
+def get_due_recalls():
+    conn = get_db_connection()
+    try:
+        sql_query = """
+            SELECT d.id, d.name, d.document_number, d.status, d.deadline,
+                   fr_latest.recipient_name, fr_latest.flow_time AS sent_time, fr_latest.stage AS sent_stage
+            FROM documents d
+            JOIN (
+                SELECT fr_inner.document_id, fr_inner.recipient_name, fr_inner.flow_time, fr_inner.stage, fr_inner.action_type
+                FROM flow_records fr_inner
+                INNER JOIN (
+                    SELECT document_id, MAX(flow_time) AS max_flow_time
+                    FROM flow_records
+                    GROUP BY document_id
+                ) frm_max ON fr_inner.document_id = frm_max.document_id AND fr_inner.flow_time = frm_max.max_flow_time
+            ) fr_latest ON d.id = fr_latest.document_id
+            WHERE d.status != 'archived' AND fr_latest.action_type = 'send'
+            ORDER BY fr_latest.flow_time DESC;
+        """
+        # The fields from documents table are: id, name, document_number, status, deadline
+        # The fields from the latest flow_record are: recipient_name, flow_time (aliased as sent_time), stage (aliased as sent_stage)
+
+        cursor = conn.execute(sql_query)
+        due_recalls_list = [dict(row) for row in cursor.fetchall()]
+        return jsonify(due_recalls_list), 200
+    except sqlite3.Error as e:
+        app.logger.error(f"Database error getting due recalls: {e}")
+        return jsonify({"error": "A database error occurred while fetching due recalls"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/dashboard/overdue_documents', methods=['GET'])
+def get_overdue_documents():
+    conn = get_db_connection()
+    try:
+        # DATE('now') in SQLite is UTC. Assuming 'deadline' is stored as YYYY-MM-DD.
+        # Ensure deadline is treated as a date for comparison.
+        sql_query = """
+            SELECT
+                id, name, document_number, status, deadline,
+                CASE
+                    WHEN date(deadline) < date('now') THEN 'overdue'
+                    WHEN date(deadline) BETWEEN date('now') AND date('now', '+3 days') THEN 'nearing_deadline'
+                    ELSE NULL -- Should not happen if WHERE clause is correct, but good for safety
+                END AS urgency
+            FROM documents
+            WHERE
+                status != 'archived'
+                AND deadline IS NOT NULL
+                AND deadline != ''
+                AND (
+                    date(deadline) < date('now')
+                    OR date(deadline) BETWEEN date('now') AND date('now', '+3 days')
+                )
+            ORDER BY date(deadline) ASC;
+        """
+        # Fetched fields: id, name, document_number, status, deadline, urgency
+        cursor = conn.execute(sql_query)
+        documents_list = [dict(row) for row in cursor.fetchall()]
+        return jsonify(documents_list), 200
+    except sqlite3.Error as e:
+        app.logger.error(f"Database error getting overdue documents: {e}")
+        return jsonify({"error": "A database error occurred while fetching overdue documents"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/dashboard/statistics', methods=['GET'])
+def get_dashboard_statistics():
+    conn = get_db_connection()
+    try:
+        # Total pending documents
+        total_pending_cursor = conn.execute("SELECT COUNT(*) AS count FROM documents WHERE status != 'archived'")
+        total_pending = total_pending_cursor.fetchone()['count']
+
+        # Documents created today
+        # entry_time is DEFAULT CURRENT_TIMESTAMP, which is UTC in SQLite. DATE('now') is also UTC.
+        created_today_cursor = conn.execute("SELECT COUNT(*) AS count FROM documents WHERE date(entry_time) = date('now')")
+        created_today = created_today_cursor.fetchone()['count']
+
+        # Documents completed today
+        # completion_time is stored in UTC.
+        completed_today_cursor = conn.execute("SELECT COUNT(*) AS count FROM documents WHERE status = 'archived' AND date(completion_time) = date('now')")
+        completed_today = completed_today_cursor.fetchone()['count']
+
+        statistics = {
+            "total_pending": total_pending,
+            "created_today": created_today,
+            "completed_today": completed_today
+        }
+        return jsonify(statistics), 200
+
+    except sqlite3.Error as e:
+        app.logger.error(f"Database error getting dashboard statistics: {e}")
+        return jsonify({"error": "A database error occurred while fetching dashboard statistics"}), 500
     finally:
         if conn:
             conn.close()

@@ -18,11 +18,104 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchForm = document.getElementById('searchForm');
     const clearSearchButton = document.getElementById('clearSearchButton');
 
-    // Function to display messages (used for send/receive actions)
-    function showActionMessage(message, isError = false) {
-        actionMessageArea.textContent = message;
-        actionMessageArea.style.color = isError ? 'red' : 'green';
+    // Personnel Management Elements
+    const addPersonnelForm = document.getElementById('addPersonnelForm');
+    const personnelNameInput = document.getElementById('personnelName');
+    const personnelRoleInput = document.getElementById('personnelRole');
+    const personnelMessageArea = document.getElementById('personnelMessageArea');
+    const refreshPersonnelListButton = document.getElementById('refreshPersonnelListButton');
+    const personnelListArea = document.getElementById('personnelListArea');
+
+    // Dashboard Elements
+    const refreshDashboardButton = document.getElementById('refreshDashboardButton');
+    const dashboardDueRecallsArea = document.getElementById('dashboardDueRecallsArea');
+    const dashboardOverdueDocumentsArea = document.getElementById('dashboardOverdueDocumentsArea');
+    const dashboardStatisticsArea = document.getElementById('dashboardStatisticsArea');
+
+
+    // Function to display messages (used for send/receive actions and personnel)
+    function showActionMessage(message, isError = false, area = actionMessageArea) {
+        area.textContent = message;
+        area.className = ''; // Clear previous classes like 'success' or 'error'
+        // Add base class if you have one, e.g., area.classList.add('message-base-style');
+        if (message) { // Only add success/error class if there's a message
+            area.classList.add(isError ? 'error' : 'success');
+        }
     }
+
+    // Fetch and display all personnel
+    async function fetchAndDisplayPersonnel() {
+        try {
+            const response = await fetch('/api/personnel');
+            if (!response.ok) {
+                showActionMessage(`Error fetching personnel: ${response.statusText}`, true, personnelMessageArea);
+                personnelListArea.innerHTML = '<p style="color:red;">Could not load personnel.</p>';
+                return;
+            }
+            const personnel = await response.json();
+            personnelListArea.innerHTML = ''; // Clear current list
+
+            if (personnel.length === 0) {
+                personnelListArea.innerHTML = '<p>No personnel found.</p>';
+                return;
+            }
+
+            const ul = document.createElement('ul');
+            ul.className = 'personnel-list';
+            personnel.forEach(person => {
+                const li = document.createElement('li');
+                li.textContent = `Name: ${person.name}, Role: ${person.role || 'N/A'}`;
+                ul.appendChild(li);
+            });
+            personnelListArea.appendChild(ul);
+            showActionMessage('', false, personnelMessageArea); // Clear any previous messages
+        } catch (error) {
+            console.error('Error fetching personnel:', error);
+            showActionMessage('Failed to fetch personnel. See console for details.', true, personnelMessageArea);
+            personnelListArea.innerHTML = '<p style="color:red;">Failed to fetch personnel.</p>';
+        }
+    }
+
+    // Function to populate a dropdown with personnel
+    async function populatePersonnelDropdown(selectElementId, includeBlankOption = true) {
+        const selectElement = document.getElementById(selectElementId);
+        if (!selectElement) {
+            console.error(`Dropdown element with ID '${selectElementId}' not found.`);
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/personnel');
+            if (!response.ok) {
+                console.error(`Error fetching personnel for dropdown ${selectElementId}: ${response.statusText}`);
+                // Optionally, display a message in the dropdown itself or a related message area
+                selectElement.innerHTML = '<option value="">Error loading personnel</option>';
+                return;
+            }
+            const personnel = await response.json();
+
+            selectElement.innerHTML = ''; // Clear existing options
+
+            if (includeBlankOption) {
+                const blankOption = document.createElement('option');
+                blankOption.value = '';
+                blankOption.textContent = '-- Select Personnel --';
+                selectElement.appendChild(blankOption);
+            }
+
+            personnel.forEach(person => {
+                const option = document.createElement('option');
+                option.value = person.name; // Using name as value as per requirement
+                option.textContent = `${person.name} (${person.role || 'N/A'})`;
+                selectElement.appendChild(option);
+            });
+
+        } catch (error) {
+            console.error(`Error populating personnel dropdown ${selectElementId}:`, error);
+            selectElement.innerHTML = '<option value="">Failed to load personnel</option>';
+        }
+    }
+
 
     // Fetch and display all documents
     async function fetchAndDisplayDocuments(queryParams = {}) {
@@ -61,6 +154,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendButton.textContent = 'Send';
                 sendButton.onclick = () => {
                     sendDocumentIdInput.value = doc.id;
+                    populatePersonnelDropdown('sendRecipientName');
+                    populatePersonnelDropdown('sendOperatorName'); // Assumes 'sendOperatorName' will be the ID in HTML
                     sendDocumentModal.style.display = 'block';
                     receiveDocumentModal.style.display = 'none';
                     showActionMessage(''); // Clear previous messages
@@ -70,6 +165,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 receiveButton.textContent = 'Receive';
                 receiveButton.onclick = () => {
                     receiveDocumentIdInput.value = doc.id;
+                    populatePersonnelDropdown('receiveReturnerName');
+                    populatePersonnelDropdown('receiveOperatorName'); // Assumes 'receiveOperatorName' will be the ID in HTML
                     receiveDocumentModal.style.display = 'block';
                     sendDocumentModal.style.display = 'none';
                     showActionMessage('');
@@ -198,26 +295,37 @@ document.addEventListener('DOMContentLoaded', () => {
     fileEntryForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        const serial_number = document.getElementById('serial_number').value;
-        const name = document.getElementById('name').value;
-        const document_number = document.getElementById('document_number').value;
-        const originating_unit = document.getElementById('originating_unit').value;
+        // Clear previous messages and classes at the beginning
+        messageArea.textContent = '';
+        messageArea.className = '';
+
+        const serial_number_input = document.getElementById('serial_number').value.trim(); // User input for SN
+        const name = document.getElementById('name').value.trim();
+        const document_number = document.getElementById('document_number').value.trim();
+        const originating_unit = document.getElementById('originating_unit').value.trim();
         const deadline = document.getElementById('deadline').value;
         const category = document.getElementById('category').value;
 
-        if (!serial_number || !name || !originating_unit) {
-            messageArea.textContent = 'Please fill in all required fields: Serial Number, Name, and Originating Unit.';
-            messageArea.style.color = 'red';
+        // Updated validation: Only Name and Originating Unit are strictly required from the user.
+        // Serial number is optional for user input; backend will generate if not provided.
+        if (!name || !originating_unit) {
+            messageArea.textContent = 'Please fill in all required fields: Name and Originating Unit.';
+            messageArea.classList.add('error'); // Add error class
             return;
         }
 
         const formData = {
-            serial_number, name, originating_unit, category,
-            document_number: document_number || null,
-            deadline: deadline || null,
+            // Send serial_number_input; backend handles empty string for auto-generation
+            serial_number: serial_number_input,
+            name,
+            originating_unit,
+            category,
+            document_number: document_number || null, // Send null if empty
+            deadline: deadline || null, // Send null if empty
         };
 
-        messageArea.textContent = ''; messageArea.style.color = 'black';
+        // messageArea.textContent = ''; // Already cleared at the top
+        // messageArea.className = ''; // Already cleared at the top
 
         try {
             const response = await fetch('/api/documents', {
@@ -228,17 +336,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const responseData = await response.json();
             if (response.status === 201) {
                 messageArea.textContent = `Success: ${responseData.message} (ID: ${responseData.id})`;
-                messageArea.style.color = 'green';
+                messageArea.classList.add('success');
                 fileEntryForm.reset();
                 fetchAndDisplayDocuments(); // Refresh the list
             } else {
                 messageArea.textContent = `Error: ${responseData.error || response.statusText}`;
-                messageArea.style.color = 'red';
+                messageArea.classList.add('error');
             }
         } catch (error) {
             console.error('File entry fetch error:', error);
             messageArea.textContent = 'An unexpected error occurred during file entry. Check console.';
-            messageArea.style.color = 'red';
+            messageArea.classList.add('error');
         }
     });
 
@@ -289,13 +397,14 @@ document.addEventListener('DOMContentLoaded', () => {
     sendDocumentForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const document_id = sendDocumentIdInput.value;
+        // Values will be read from select elements once HTML is updated
         const recipient_name = document.getElementById('sendRecipientName').value;
+        const sender_name = document.getElementById('sendOperatorName').value; // Will be 'sendOperatorName'
         const stage = document.getElementById('sendStage').value;
         const notes = document.getElementById('sendNotes').value;
-        const sender_name = "WebAppUser"; // Hardcoded as per requirement
 
-        if (!recipient_name || !stage) {
-            showActionMessage("Recipient Name and Stage are required for sending.", true);
+        if (!recipient_name || !stage || !sender_name) {
+            showActionMessage("Recipient, Operator, and Stage are required for sending.", true);
             return;
         }
 
@@ -327,13 +436,15 @@ document.addEventListener('DOMContentLoaded', () => {
     receiveDocumentForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const document_id = receiveDocumentIdInput.value;
+        // Values will be read from select elements once HTML is updated
         const returner_name = document.getElementById('receiveReturnerName').value;
+        const receiver_name = document.getElementById('receiveOperatorName').value; // Will be 'receiveOperatorName'
         const stage = document.getElementById('receiveStage').value;
         const notes = document.getElementById('receiveNotes').value;
-        const receiver_name = "WebAppUser"; // Hardcoded as per requirement
 
-        if (!returner_name || !stage) {
-            showActionMessage("Returner Name and Stage are required for receiving.", true);
+
+        if (!returner_name || !stage || !receiver_name) {
+            showActionMessage("Returner, Operator, and Stage are required for receiving.", true);
             return;
         }
 
@@ -364,4 +475,163 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial load of documents
     fetchAndDisplayDocuments({}); // Pass empty object for initial load
+    fetchAndDisplayPersonnel(); // Initial load of personnel
+    loadDashboardData(); // Initial load of dashboard data
+
+
+    // Dashboard Functions
+    async function fetchAndDisplayStatistics() {
+        if (!dashboardStatisticsArea) return;
+        dashboardStatisticsArea.innerHTML = 'Loading statistics...';
+        try {
+            const response = await fetch('/api/dashboard/statistics');
+            if (!response.ok) {
+                dashboardStatisticsArea.textContent = `Error: ${response.statusText}`;
+                return;
+            }
+            const stats = await response.json();
+            dashboardStatisticsArea.innerHTML = `
+                <p>Total Pending Documents: <strong>${stats.total_pending}</strong></p>
+                <p>Documents Created Today: <strong>${stats.created_today}</strong></p>
+                <p>Documents Completed Today: <strong>${stats.completed_today}</strong></p>
+            `;
+        } catch (error) {
+            console.error('Error fetching statistics:', error);
+            dashboardStatisticsArea.textContent = 'Failed to load statistics.';
+        }
+    }
+
+    async function fetchAndDisplayDueRecalls() {
+        if (!dashboardDueRecallsArea) return;
+        dashboardDueRecallsArea.innerHTML = 'Loading due recalls...';
+        try {
+            const response = await fetch('/api/dashboard/due_recalls');
+            if (!response.ok) {
+                dashboardDueRecallsArea.textContent = `Error: ${response.statusText}`;
+                return;
+            }
+            const documents = await response.json();
+            if (documents.length === 0) {
+                dashboardDueRecallsArea.innerHTML = '<p>No documents currently pending recall.</p>';
+                return;
+            }
+            const ul = document.createElement('ul');
+            documents.forEach(doc => {
+                const li = document.createElement('li');
+                let deadlineInfo = 'N/A';
+                if (doc.deadline) {
+                    const deadlineDate = new Date(doc.deadline + 'T00:00:00'); // Ensure deadline is treated as date
+                    const isOverdue = deadlineDate < new Date(new Date().toDateString()); // Compare date parts only
+                    deadlineInfo = `${deadlineDate.toLocaleDateString()} ${isOverdue ? '<strong style="color:red;">(OVERDUE)</strong>' : ''}`;
+                }
+
+                li.innerHTML = `
+                    <strong>${doc.name}</strong> (SN: ${doc.serial_number || 'N/A'}, DocNo: ${doc.document_number || 'N/A'})<br>
+                    Sent To: ${doc.recipient_name} (Stage: ${doc.sent_stage})<br>
+                    Sent Time: ${new Date(doc.sent_time).toLocaleString()}<br>
+                    Original Deadline: ${deadlineInfo}<br>
+                    Current Status: ${doc.status}
+                `;
+                ul.appendChild(li);
+            });
+            dashboardDueRecallsArea.innerHTML = ''; // Clear loading message
+            dashboardDueRecallsArea.appendChild(ul);
+        } catch (error) {
+            console.error('Error fetching due recalls:', error);
+            dashboardDueRecallsArea.textContent = 'Failed to load due recalls.';
+        }
+    }
+
+    async function fetchAndDisplayOverdueDocuments() {
+        if (!dashboardOverdueDocumentsArea) return;
+        dashboardOverdueDocumentsArea.innerHTML = 'Loading overdue documents...';
+        try {
+            const response = await fetch('/api/dashboard/overdue_documents');
+            if (!response.ok) {
+                dashboardOverdueDocumentsArea.textContent = `Error: ${response.statusText}`;
+                return;
+            }
+            const documents = await response.json();
+            if (documents.length === 0) {
+                dashboardOverdueDocumentsArea.innerHTML = '<p>No documents are currently overdue or nearing deadline.</p>';
+                return;
+            }
+            const ul = document.createElement('ul');
+            documents.forEach(doc => {
+                const li = document.createElement('li');
+                let urgencyStyle = '';
+                if (doc.urgency === 'overdue') {
+                    urgencyStyle = 'color: red; font-weight: bold;';
+                } else if (doc.urgency === 'nearing_deadline') {
+                    urgencyStyle = 'color: orange;';
+                }
+                li.innerHTML = `
+                    <strong>${doc.name}</strong> (SN: ${doc.serial_number || 'N/A'}, DocNo: ${doc.document_number || 'N/A'})<br>
+                    Deadline: ${new Date(doc.deadline + 'T00:00:00').toLocaleDateString()}<br>
+                    Urgency: <span style="${urgencyStyle}">${doc.urgency.replace('_', ' ')}</span><br>
+                    Current Status: ${doc.status}
+                `;
+                ul.appendChild(li);
+            });
+            dashboardOverdueDocumentsArea.innerHTML = ''; // Clear loading message
+            dashboardOverdueDocumentsArea.appendChild(ul);
+        } catch (error) {
+            console.error('Error fetching overdue documents:', error);
+            dashboardOverdueDocumentsArea.textContent = 'Failed to load overdue documents.';
+        }
+    }
+
+    function loadDashboardData() {
+        fetchAndDisplayStatistics();
+        fetchAndDisplayDueRecalls();
+        fetchAndDisplayOverdueDocuments();
+    }
+
+    if(refreshDashboardButton) {
+        refreshDashboardButton.addEventListener('click', loadDashboardData);
+    }
+
+    // Event listener for "Add Personnel" form
+    if (addPersonnelForm) {
+        addPersonnelForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const name = personnelNameInput.value.trim();
+            const role = personnelRoleInput.value.trim();
+
+            if (!name) {
+                // showActionMessage handles personnelMessageArea directly if 'area' param is used
+                showActionMessage('Personnel name is required.', true, personnelMessageArea);
+                return;
+            }
+
+            const payload = { name, role };
+            showActionMessage('Adding personnel...', false, personnelMessageArea); // Show neutral message
+
+            try {
+                const response = await fetch('/api/personnel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const responseData = await response.json();
+
+                if (response.ok) { // Status 201 or similar
+                    showActionMessage(responseData.message || 'Personnel added successfully!', false, personnelMessageArea);
+                    addPersonnelForm.reset();
+                    fetchAndDisplayPersonnel(); // Refresh the list
+                } else {
+                    showActionMessage(responseData.error || `Error adding personnel: ${response.statusText}`, true, personnelMessageArea);
+                }
+            } catch (error) {
+                console.error('Add personnel error:', error);
+                showActionMessage('An unexpected error occurred while adding personnel. Check console.', true, personnelMessageArea);
+            }
+        });
+    }
+
+    // Event listener for "Refresh Personnel List" button
+    if (refreshPersonnelListButton) {
+        refreshPersonnelListButton.addEventListener('click', fetchAndDisplayPersonnel);
+    }
+
 });
